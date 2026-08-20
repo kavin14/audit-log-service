@@ -6,9 +6,9 @@
 
 **Assignment Title:** Interview Assignment: Build an AI-Assisted Software Engineering System — Audit Log Service (Charles Schwab & Co., Inc., v2.0)
 
-**Assignment Start Date:** 2026-08-20
+**Assignment Start Date:** 2026-08-19
 
-**Assignment Submission Date:** [FILL IN ON SUBMISSION]
+**Assignment Submission Date:** 2026-08-20
 
 ---
 
