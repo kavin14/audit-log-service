@@ -1,6 +1,6 @@
 # Attestation
 
-**Full Name:** [FILL IN YOUR FULL LEGAL NAME]
+**Full Name:** Kavin Ebenezer Isaac Premkumar
 
 **Email Address:** kavin.isaac@gmail.com
 
@@ -12,11 +12,5 @@
 
 ---
 
-I, [YOUR FULL NAME], attest that this submission is my own individual work, completed on my own
-machine and accounts, and that it honestly reflects my development process and use of AI.
-
----
-
-*Note: this statement is a personal attestation and must be completed and confirmed by the
-candidate themselves before submission — not filled in on their behalf. See AI_USAGE_LOG.md for
-the traceability record of how AI was used while building this.*
+I, Kavin Ebenezer Isaac Premkumar, attest that this submission is my own individual work, completed
+on my own machine and accounts, and that it honestly reflects my development process and use of AI.
