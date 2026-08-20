@@ -1,0 +1,244 @@
+{
+  "info": {
+    "name": "Audit Log Service",
+    "description": "Tamper-evident audit log service - Charles Schwab / Persistent take-home assignment. Covers Scenario A (core), B (retention/redaction/export), and C (compliance report). Run 'Create event' first (and 'Redact event' / 'Export bundle' as needed) so the {{eventId}} / {{exportBundle}} variables are populated for the requests that depend on them.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "eventId", "value": "" },
+    { "key": "resourceId", "value": "acct-1" },
+    { "key": "exportBundle", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "A - Core",
+      "item": [
+        {
+          "name": "Create event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('eventId', body.id);",
+                  "pm.test('has contentHash and previousHash', () => {",
+                  "  pm.expect(body.contentHash).to.be.a('string');",
+                  "  pm.expect(body.previousHash).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"RECORD_UPDATED\",\n  \"actorId\": \"teller-1\",\n  \"resourceType\": \"ACCOUNT\",\n  \"resourceId\": \"{{resourceId}}\",\n  \"payload\": {\n    \"field\": \"balance\",\n    \"oldValue\": 100,\n    \"newValue\": 250,\n    \"accountNumber\": \"9876543210\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/audit/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "events"]
+            },
+            "description": "Append a record. Records are append-only - there is intentionally no PUT/PATCH/DELETE."
+          }
+        },
+        {
+          "name": "Get event by id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/audit/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "events", "{{eventId}}"]
+            }
+          }
+        },
+        {
+          "name": "Query events",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/audit/events?resourceId={{resourceId}}&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "events"],
+              "query": [
+                { "key": "resourceId", "value": "{{resourceId}}" },
+                { "key": "actorId", "value": "", "disabled": true },
+                { "key": "resourceType", "value": "", "disabled": true },
+                { "key": "eventType", "value": "", "disabled": true },
+                { "key": "from", "value": "", "disabled": true },
+                { "key": "to", "value": "", "disabled": true },
+                { "key": "includeArchived", "value": "false", "disabled": true },
+                { "key": "size", "value": "20" }
+              ]
+            },
+            "description": "All query params are optional and combinable: actorId, resourceType, resourceId, eventType, from, to (ISO-8601, filtered against occurredAt), includeArchived (default false), page, size, sort."
+          }
+        },
+        {
+          "name": "Verify chain",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('chain is intact', () => pm.expect(pm.response.json().intact).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/audit/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "verify"]
+            },
+            "description": "Walks the full chain. Returns { intact, recordsChecked, firstBrokenSequenceNumber, violationType, details }."
+          }
+        }
+      ]
+    },
+    {
+      "name": "B - Retention, redaction, export",
+      "item": [
+        {
+          "name": "Redact event",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fields\": [\"accountNumber\"],\n  \"actorId\": \"compliance-officer-1\",\n  \"reason\": \"PCI scope reduction\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/audit/events/{{eventId}}/redact",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "events", "{{eventId}}", "redact"]
+            },
+            "description": "Replaces the listed payload fields with a placeholder without invalidating contentHash. Idempotent. Appends a companion PAYLOAD_REDACTED event. Requires {{eventId}} from 'Create event'."
+          }
+        },
+        {
+          "name": "Archive eligible records",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/audit/retention/archive?olderThanDays=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "retention", "archive"],
+              "query": [
+                { "key": "olderThanDays", "value": "0", "description": "Overrides the configured window (audit.retention.archive-after-days, default 90). 0 archives everything written so far - useful for demoing without waiting on real time." }
+              ]
+            },
+            "description": "Archives records older than the window (flips archived/archivedAt only - never a hash-relevant field, so verify() still passes)."
+          }
+        },
+        {
+          "name": "Export bundle",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('exportBundle', pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/audit/export?resourceId={{resourceId}}&includeArchived=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "export"],
+              "query": [
+                { "key": "resourceId", "value": "{{resourceId}}" },
+                { "key": "includeArchived", "value": "true" }
+              ]
+            },
+            "description": "Exactly one of resourceId or actorId is required. Saves the raw response into {{exportBundle}} for the 'Verify bundle' request."
+          }
+        },
+        {
+          "name": "Verify bundle",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('bundle is intact', () => pm.expect(pm.response.json().intact).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{{exportBundle}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/audit/export/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "export", "verify"]
+            },
+            "description": "Reruns the same checks a recipient would run independently, against only the bundle JSON - no DB access. Run 'Export bundle' first to populate {{exportBundle}}."
+          }
+        }
+      ]
+    },
+    {
+      "name": "C - Compliance report",
+      "item": [
+        {
+          "name": "Compliance report (JSON)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/audit/compliance-report?resourceId={{resourceId}}&resourceType=ACCOUNT",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "compliance-report"],
+              "query": [
+                { "key": "resourceId", "value": "{{resourceId}}" },
+                { "key": "resourceType", "value": "ACCOUNT" },
+                { "key": "from", "value": "", "disabled": true },
+                { "key": "to", "value": "", "disabled": true },
+                { "key": "includeArchived", "value": "true", "disabled": true }
+              ]
+            },
+            "description": "See SCENARIO_C.md for the clarified requirement this implements. Returns chronological access rows plus a chainIntact flag."
+          }
+        },
+        {
+          "name": "Compliance report (CSV download)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/audit/compliance-report?resourceId={{resourceId}}&format=csv",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "compliance-report"],
+              "query": [
+                { "key": "resourceId", "value": "{{resourceId}}" },
+                { "key": "format", "value": "csv" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
