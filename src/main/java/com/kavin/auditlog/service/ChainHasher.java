@@ -34,9 +34,24 @@ public class ChainHasher {
                 + resourceType + FIELD_SEPARATOR
                 + resourceId + FIELD_SEPARATOR
                 + canonicalPayload + FIELD_SEPARATOR
-                + occurredAt + FIELD_SEPARATOR
-                + recordedAt;
+                + canonicalInstant(occurredAt) + FIELD_SEPARATOR
+                + canonicalInstant(recordedAt);
         return sha256Hex(joined);
+    }
+
+    /**
+     * {@code Instant.toString()} is not a safe hashing input: it's only used at write time
+     * against the original in-memory object, but re-verification may recompute this hash from
+     * an Instant that has round-tripped through JSON (bundle export/verify) or been reloaded
+     * from the database - and different java.time serializers are not guaranteed to reproduce
+     * an identical string for an equal instant (e.g. differing fractional-second truncation).
+     * epochSecond+nano is what Instant.equals() actually compares, so encoding those two
+     * numbers directly is the only representation guaranteed to match whenever the instants are
+     * equal, regardless of how the value got there. Caught via ExportIntegrationTest failing
+     * non-deterministically on unmodified data before this fix - see AI_USAGE_LOG.md.
+     */
+    private String canonicalInstant(Instant instant) {
+        return instant.getEpochSecond() + "." + instant.getNano();
     }
 
     public String sha256Hex(String input) {
