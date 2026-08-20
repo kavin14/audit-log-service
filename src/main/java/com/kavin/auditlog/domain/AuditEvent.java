@@ -89,6 +89,11 @@ public class AuditEvent {
     @Column(name = "archived_at")
     private Instant archivedAt;
 
+    /** Optimistic lock so two concurrent redaction requests on the same record can't lose an update. */
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     protected AuditEvent() {
         // JPA
     }
