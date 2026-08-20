@@ -72,6 +72,19 @@
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Spring Boot 4 moved TestRestTemplate out of spring-boot-test into its own module,
+		     and its autoconfiguration needs RestTemplateBuilder from spring-boot-restclient
+		     (not pulled in transitively unless a RestClient starter is already on the classpath). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-resttestclient</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-restclient</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>

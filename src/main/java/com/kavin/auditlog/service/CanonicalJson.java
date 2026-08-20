@@ -43,4 +43,9 @@ public class CanonicalJson {
             throw new IllegalArgumentException("payload could not be serialized: " + e.getMessage(), e);
         }
     }
+
+    /** Parses stored canonical JSON back into a map for API responses. */
+    public Map<String, Object> parseToMap(String json) {
+        return mapper.readValue(json, LinkedHashMap.class);
+    }
 }
