@@ -26,11 +26,14 @@ public class AuditEventService {
     private final AuditEventRepository repository;
     private final CanonicalJson canonicalJson;
     private final ChainHasher chainHasher;
+    private final PayloadHasher payloadHasher;
 
-    public AuditEventService(AuditEventRepository repository, CanonicalJson canonicalJson, ChainHasher chainHasher) {
+    public AuditEventService(AuditEventRepository repository, CanonicalJson canonicalJson, ChainHasher chainHasher,
+                              PayloadHasher payloadHasher) {
         this.repository = repository;
         this.canonicalJson = canonicalJson;
         this.chainHasher = chainHasher;
+        this.payloadHasher = payloadHasher;
     }
 
     /**
@@ -48,6 +51,14 @@ public class AuditEventService {
     public synchronized AuditEventResponse append(CreateAuditEventRequest request) {
         String canonicalPayload = canonicalJson.canonicalize(request.getPayload());
 
+        // Scenario B (redaction): hash each payload field individually rather than the payload
+        // blob as a whole, so a field can later be redacted (its live value replaced) without
+        // invalidating contentHash - see PayloadHasher and ARCHITECTURE.md "Redaction".
+        String salt = payloadHasher.newSalt();
+        var manifest = payloadHasher.buildManifest(request.getPayload(), salt);
+        String manifestJson = canonicalJson.canonicalize(manifest);
+        String manifestHash = payloadHasher.manifestHash(manifest);
+
         Optional<AuditEvent> tip = repository.findTopByOrderBySequenceNumberDesc();
         long nextSequenceNumber = tip.map(e -> e.getSequenceNumber() + 1).orElse(1L);
         String previousHash = tip.map(AuditEvent::getContentHash).orElse(ChainHasher.GENESIS_HASH);
@@ -56,11 +67,11 @@ public class AuditEventService {
         Instant occurredAt = request.getOccurredAt() != null ? request.getOccurredAt() : recordedAt;
 
         String contentHash = chainHasher.hashContent(nextSequenceNumber, request.getEventType(), request.getActorId(),
-                request.getResourceType(), request.getResourceId(), canonicalPayload, occurredAt, recordedAt);
+                request.getResourceType(), request.getResourceId(), manifestHash, occurredAt, recordedAt);
 
         AuditEvent event = new AuditEvent(UUID.randomUUID(), nextSequenceNumber, request.getEventType(),
                 request.getActorId(), request.getResourceType(), request.getResourceId(), canonicalPayload,
-                occurredAt, recordedAt, contentHash, previousHash);
+                manifestJson, salt, "[]", occurredAt, recordedAt, contentHash, previousHash);
 
         repository.save(event);
         return toResponse(event);
@@ -94,6 +105,7 @@ public class AuditEventService {
     }
 
     private AuditEventResponse toResponse(AuditEvent event) {
-        return AuditEventResponse.from(event, canonicalJson.parseToMap(event.getPayload()));
+        return AuditEventResponse.from(event, canonicalJson.parseToMap(event.getPayload()),
+                canonicalJson.parseToStringList(event.getRedactedFields()));
     }
 }

@@ -6,6 +6,7 @@ import tools.jackson.databind.json.JsonMapper;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -36,7 +37,7 @@ public class CanonicalJson {
     }
 
     /** Serializes an already-in-memory map with sorted keys (used for request DTOs). */
-    public String canonicalize(Map<String, Object> value) {
+    public String canonicalize(Map<String, ?> value) {
         try {
             return mapper.writeValueAsString(value);
         } catch (Exception e) {
@@ -47,5 +48,27 @@ public class CanonicalJson {
     /** Parses stored canonical JSON back into a map for API responses. */
     public Map<String, Object> parseToMap(String json) {
         return mapper.readValue(json, LinkedHashMap.class);
+    }
+
+    /** Parses a stored canonical JSON array back into a list (used for redactedFields). */
+    public List<String> parseToStringList(String json) {
+        return mapper.readValue(json, List.class);
+    }
+
+    public String canonicalizeList(List<String> value) {
+        try {
+            return mapper.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("value could not be serialized: " + e.getMessage(), e);
+        }
+    }
+
+    /** Canonical JSON for a single arbitrary value (used to hash one payload field in isolation). */
+    public String canonicalizeValue(Object value) {
+        try {
+            return mapper.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("value could not be serialized: " + e.getMessage(), e);
+        }
     }
 }

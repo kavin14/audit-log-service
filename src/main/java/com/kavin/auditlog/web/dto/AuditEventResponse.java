@@ -3,6 +3,7 @@ package com.kavin.auditlog.web.dto;
 import com.kavin.auditlog.domain.AuditEvent;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -14,6 +15,7 @@ public record AuditEventResponse(
         String resourceType,
         String resourceId,
         Map<String, Object> payload,
+        List<String> redactedFields,
         Instant occurredAt,
         Instant recordedAt,
         String contentHash,
@@ -21,7 +23,8 @@ public record AuditEventResponse(
         boolean archived,
         Instant archivedAt
 ) {
-    public static AuditEventResponse from(AuditEvent event, Map<String, Object> parsedPayload) {
+    public static AuditEventResponse from(AuditEvent event, Map<String, Object> parsedPayload,
+                                           List<String> redactedFields) {
         return new AuditEventResponse(
                 event.getId(),
                 event.getSequenceNumber(),
@@ -30,6 +33,7 @@ public record AuditEventResponse(
                 event.getResourceType(),
                 event.getResourceId(),
                 parsedPayload,
+                redactedFields,
                 event.getOccurredAt(),
                 event.getRecordedAt(),
                 event.getContentHash(),
