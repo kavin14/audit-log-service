@@ -68,11 +68,87 @@ read line-by-line and explicitly approved by the candidate** — see the note at
   sense and can be explained/defended without notes. Decide whether the synchronized-append
   concurrency trade-off is acceptable to present as-is or should be reworked.
 
+## 2026-08-20 — Scenario B: redaction (payload hashing redesign)
+
+- Prompted: implement Scenario B's redaction requirement — "the original hash covers the original
+  value, so simply removing the value would invalidate the hash... design and implement a
+  redaction scheme that satisfies both tamper-evidence and data privacy."
+- Design rationale (AI-proposed): rather than patch the existing whole-payload hash, reworked it
+  to a per-field manifest (`PayloadHasher`) — each payload field gets its own salted commitment
+  hash; the manifest's hash feeds `contentHash` instead of the raw payload text. A field can be
+  redacted (value replaced with a placeholder) without touching the manifest, so `contentHash`
+  never changes. This is a deliberate, considered redesign (documented in the commit message and
+  in `README.md` "Redaction"), not a quick patch — **this is the single design decision most
+  worth independently re-deriving and defending in the live session**, since it's the assignment's
+  explicitly-called-out "genuine engineering problem."
+- Explicitly documented, not hidden, limitation: verification cannot independently re-check a
+  redacted field's value once redacted (the plaintext is gone). Mitigation implemented: every
+  redaction appends a companion `PAYLOAD_REDACTED` audit event, so the act of redacting is itself
+  part of the tamper-evident trail. `PayloadHasherTest` includes a test
+  (`tamperingWithARedactedFieldsPlaceholderIsNotFlaggedByFieldCheck`) whose whole purpose is to
+  make this limitation visible and explicit rather than silently true.
+- Verification performed: `PayloadHasherTest` (5 tests) unit-level; `RedactionIntegrationTest`
+  (3 tests) end-to-end via real HTTP calls, including tampering with a *non*-redacted field after
+  an unrelated redaction to confirm the rest of the record is still fully protected.
+- Human review needed: read `PayloadHasher.recombine` and confirm you can explain, without notes,
+  why redacting field A doesn't affect verifiability of field B, and why the companion-event
+  mitigation is a mitigation and not a fix.
+
+## 2026-08-20 — Scenario B: retention and bulk export
+
+- Retention: straightforward relative to redaction — `RetentionService` only ever flips
+  `archived`/`archivedAt`, never a hash-relevant field, so no new hashing design was needed. Low
+  review priority relative to redaction/export.
+- Bulk export: implemented `ExportBundle` (records + `bundleHash`) and `BundleVerificationService`
+  to make "a recipient can independently verify records haven't been altered since export"
+  concretely demonstrable (a `/audit/export/verify` endpoint that only looks at the bundle JSON).
+- **Two real bugs, both caught by `ExportIntegrationTest` failing on legitimate, non-tampered
+  data (not found by manual review) — both are worth understanding, not just accepting the fix:**
+  1. `ChainHasher` hashed `Instant` fields via `toString()`. That's fine when hash and re-verify
+     happen against the same in-memory object (Scenario A's normal path), but bundle verification
+     recomputes hashes from `Instant`s that round-tripped through JSON first, and
+     `Instant.toString()` isn't guaranteed to produce an identical string for an equal instant
+     across different serializers/paths. Fixed by hashing `epochSecond`+`nano` directly (what
+     `Instant.equals()` actually compares) — representation-independent by construction. Applied
+     the same fix to `bundleHash`'s `exportedAt` field.
+  2. `BundleVerificationService` initially checked every exported record's `previousHash` against
+     the *previous exported record's* `contentHash` — copying the full-chain verifier's logic
+     without noticing the assumption doesn't hold: a resource/actor-filtered bundle is generally
+     **not** a contiguous chain slice (other resources' records can sit between two exported
+     records). This made the check fail on a perfectly legitimate export the moment an unrelated
+     record happened to be interleaved. Fixed to only check chain-linkage for the first record
+     (against `previousHashBeforeBundle`); documented the resulting scope of what a bundle proves
+     and doesn't in the class javadoc and in `README.md` "Bulk export".
+- Verification performed: full suite (25 tests at that point) run three consecutive times after
+  both fixes to rule out flakiness, not just a single green run.
+- Human review needed: bug #2 in particular is a genuine design-scope question (what *can* a
+  filtered bundle prove?), not just a bugfix — be ready to explain the distinction between
+  "internally consistent + unaltered since export" and "complete" or "authentic" without reading
+  from the README.
+
+## 2026-08-20 — Scenario C: ambiguous requirement
+
+- Prompted: Scenario C's deliberately underspecified requirement ("Regulators need to be able to
+  audit access to client account data") — demonstrate clarification before implementation.
+- AI action: wrote `SCENARIO_C.md` identifying five ambiguities (does "access" mean reads, writes,
+  or both; how broad is "client account data"; who consumes this and how; what does "audit" mean
+  as a deliverable; is instrumenting other systems in scope), stated assumptions in place of
+  asking a product owner, derived a clarified requirement statement, then implemented against it.
+- **This is the one artifact in this repo that most directly represents a judgment call rather
+  than an engineering derivation** — a different, equally reasonable reading of the requirement
+  (e.g. "access" meaning writes only, or scope including transactions/documents) would produce a
+  different implementation. Reviewing `SCENARIO_C.md` and deciding whether these are the
+  assumptions you'd have made is higher-priority than reviewing the report endpoint's code itself.
+- Implementation was deliberately kept thin (a reporting layer over Scenario A's existing
+  query/verification, not new storage) once the requirement was clarified — no new design
+  decisions of the weight of Scenario B's redaction rework were needed here.
+- Verification performed: `ComplianceReportIntegrationTest` (3 tests) — JSON and CSV output,
+  chain-status flag, required-parameter validation.
+
 ## Outstanding (not yet started)
 
-- Scenario B (retention/archival, redaction, bulk export).
-- Scenario C (ambiguous compliance-reporting requirement — clarification + design + implementation).
-- Final Engineering Summary.
+- Nothing — all three scenarios and the final summary are implemented as of this log entry. See
+  `SUMMARY.md` for what's still a known limitation vs. what's genuinely done.
 
 ## Note on review status
 
