@@ -247,17 +247,22 @@ on legitimate, unmodified data before the fix — see `AI_USAGE_LOG.md`.
 ## Manually inspecting or tampering with the data store
 
 The assignment asks that the service be validated by writing events, querying them, verifying the
-chain, then modifying a record directly in the data store and verifying again. To do this by hand
+chain, then modifying a record directly in the data store and verifying again. `scripts/tamper-demo.sql`
+has ready-to-run queries for all three violation types plus inline instructions; the short version
 (the automated integration test does the same thing against an in-memory DB):
 
 1. Start the app, write a few events via `POST /audit/events`, confirm `GET /audit/verify` reports
    `intact: true`.
-2. Stop the app (H2's embedded file mode holds an exclusive lock on the `.mv.db` file).
-3. Use the H2 command-line shell to edit a row directly, bypassing the API entirely:
-   ```
-   java -cp ~/.m2/repository/com/h2database/h2/<version>/h2-<version>.jar org.h2.tools.Shell \
-     -url "jdbc:h2:file:./data/auditlog" -user sa -password "" \
-     -sql "UPDATE audit_event SET actor_id = 'attacker' WHERE sequence_number = 1;"
-   ```
-4. Restart the app and call `GET /audit/verify` again — it reports `intact: false` with the
-   sequence number and violation type.
+2. Back up `data/auditlog.mv.db` so you can restore between demos instead of re-seeding each time.
+3. Open the H2 console at `http://localhost:8080/h2-console` (JDBC URL `jdbc:h2:file:./data/auditlog`,
+   user `sa`, blank password) and run an `UPDATE`/`DELETE` from `scripts/tamper-demo.sql` directly
+   against `audit_event`, bypassing the API entirely. No need to stop the app first — the console
+   runs inside the same JVM and shares the same open database instance, so there's no file-lock
+   conflict, and autocommit is on by default.
+4. Call `GET /audit/verify` again — it reports `intact: false` with the sequence number and
+   violation type.
+
+Alternative when the app isn't running: the H2 command-line shell can edit the file directly
+(`java -cp ~/.m2/repository/com/h2database/h2/<version>/h2-<version>.jar org.h2.tools.Shell -url
+"jdbc:h2:file:./data/auditlog" -user sa -password "" -sql "..."`), since nothing else holds the
+file lock while the app is stopped.
